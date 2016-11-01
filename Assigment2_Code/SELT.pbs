@@ -1,0 +1,11 @@
+#!/bin/bash
+#PBS -q normal
+#PBS -l select=2:ncpus=24:mem=96G:mpiprocs=24:ompthreads=1
+#PBS -l walltime=01:00:00
+#PBS -N SETL
+#PBS -o SETL.pbs.o
+#PBS -e SETL.pbs.e
+module load gromacs/5.1.2/gcc493/impi
+cd $PBS_O_WORKDIR
+make -f makefile.nscc
+mpirun -np 8 SETL_par ../Data/random3000.w 100 ../Data/glider5.p

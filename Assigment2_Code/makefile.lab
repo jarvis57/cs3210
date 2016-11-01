@@ -1,0 +1,4 @@
+all: SELT_par
+
+SELT_par: SETL.c
+	mpicc SETL_par.c -o SETL_par
