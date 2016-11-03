@@ -22,8 +22,23 @@ int max(int a, int b);
 
 
 /***********************************************************
+  Cell related functions, used for storing, managing cells
+***********************************************************/
+
+typedef struct CELLS {
+    int row;
+    int col;
+} CELL;
+
+CELL* allocateCellsList( int size );
+
+void printList(CELL* cells, int numCells, int iter, int rotation);
+
+
+/***********************************************************
   Square/Rectangle matrix related functions, used by both world and pattern
 ***********************************************************/
+
 char** allocateRectMatrix( int rows, int cols, char defaultValue );
 
 char** allocateSquareMatrix( int size, char defaultValue );
@@ -68,9 +83,6 @@ void deleteList( MATCHLIST*);
 
 void insertEnd(MATCHLIST*, int, int, int, int);
 
-void printList(MATCHLIST*);
-
-
 /***********************************************************
    Search related functions
 ***********************************************************/
@@ -98,13 +110,14 @@ void searchSinglePattern(char** world, int startRow, int numRowsToCheck, int wRo
 
 int main( int argc, char** argv)
 {
+    // Variables
     char **curW, **nextW, **temp, dummy[20];
     char **patterns[4];
     int dir, iterations, iter;
     int size, patternSize;
     long long before, after;
 
-    // Iteration Var
+    // Iteration Variables
     int task, rotation, row;
 
     // MPI Variables
@@ -125,6 +138,17 @@ int main( int argc, char** argv)
     MPI_Init(&argc, &argv);
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &numtasks);
+
+    // Create a type for struct CELL, for printing data
+    int          nitems = 2;
+    int          blocklengths[2] = {1,1};
+    MPI_Datatype types[2] = {MPI_INT, MPI_INT};
+    MPI_Datatype MPI_CELL_TYPE;
+    MPI_Aint     offsets[2];
+    offsets[0] = offsetof(CELL, row);
+    offsets[1] = offsetof(CELL, col);
+    MPI_Type_create_struct(nitems, blocklengths, offsets, types, &MPI_CELL_TYPE);
+    MPI_Type_commit(&MPI_CELL_TYPE);
 
     // Read Files, only in root task.
     if (rank == root) {
@@ -222,19 +246,19 @@ int main( int argc, char** argv)
 
         // Send additional rows to neighbors (rows that neighbors cannot calculate by themselves)
         if (rank != numtasks-1)
-            MPI_Isend(&curW[numRows][0], size+2, MPI_CHAR, rank+1, iter, MPI_COMM_WORLD, &req);
+            MPI_Isend(&curW[numRows][1], size, MPI_CHAR, rank+1, iter, MPI_COMM_WORLD, &req);
         if (rank != 0)
-            MPI_Isend(&curW[patternSize-1][0], size+2, MPI_CHAR, rank-1, iterations+iter, MPI_COMM_WORLD, &req);
+            MPI_Isend(&curW[patternSize-1][1], size, MPI_CHAR, rank-1, iterations+iter, MPI_COMM_WORLD, &req);
 
         // Blocking receive rows from the neighbors, that I cannot calculate by myself
         if (rank != 0)
-            MPI_Recv(&curW[0][0], size+2, MPI_CHAR, rank-1, iter, MPI_COMM_WORLD, &stat);
+            MPI_Recv(&curW[0][1], size, MPI_CHAR, rank-1, iter, MPI_COMM_WORLD, &stat);
         if (rank != numtasks-1)
-            MPI_Recv(&curW[totalRows-1][0], size+2, MPI_CHAR, rank+1, iterations+iter, MPI_COMM_WORLD, &stat);
+            MPI_Recv(&curW[totalRows-1][1], size, MPI_CHAR, rank+1, iterations+iter, MPI_COMM_WORLD, &stat);
     }
 
     // -------------------------------------------------------------------------
-    // Print the results in order from all ranks
+    // Print the results in order
     // -------------------------------------------------------------------------
 
     // Send the sizes of results from all ranks to the root and print
@@ -248,20 +272,35 @@ int main( int argc, char** argv)
     cur = list->tail->next;
     int count = 1;
 
-    // For-loop iter first, then the rotation
+    // Cells to print
+    CELL *cellsToPrint;
+    cellsToPrint = allocateCellsList(size * rowsPerTask);
+    int numCells;
+
+    // FOR EACH (iteration, rotation)
     for (iter = 0; iter < iterations; iter++) {
         for (rotation = 0; rotation < 4; rotation++) {
-            for (task = 0; task < numtasks; task++) {
-                // tasks run synchronously using the Barrier
-                // this make sure the order of coordinations for each (iteration, rotation)
-                if (rank == task) {
-                    while (count <= listSize && cur->iteration == iter && cur->rotation == rotation) {
-                        printf("%d:%d:%d:%d\n", cur->iteration, cur->row, cur->col, cur->rotation);
-                        cur = cur->next;
-                        count++;
-                    }
+            // Get list of results corresponding to (iteration, rotation)
+            numCells = 0;
+            while (count <= listSize && cur->iteration == iter && cur->rotation == rotation) {
+                cellsToPrint[numCells].row = cur->row;
+                cellsToPrint[numCells].col = cur->col;
+                numCells ++; count ++;
+                cur = cur->next;
+            }
+
+            if (rank == root) {
+                // Only printing at root
+                printList(cellsToPrint, numCells, iter, rotation);
+                for (task = 1; task < numtasks; task ++) {
+                    MPI_Probe(task, tag, MPI_COMM_WORLD, &stat);
+                    MPI_Get_count(&stat, MPI_CELL_TYPE, &numCells);
+                    MPI_Recv(&cellsToPrint[0], numCells, MPI_CELL_TYPE, task, tag, MPI_COMM_WORLD, &stat);
+                    printList(cellsToPrint, numCells, iter, rotation);
                 }
-                MPI_Barrier(MPI_COMM_WORLD);
+            } else {
+                // Non-root tasks: send printing data to root
+                MPI_Send(&cellsToPrint[0], numCells, MPI_CELL_TYPE, root, tag, MPI_COMM_WORLD);
             }
         }
     }
@@ -278,6 +317,7 @@ int main( int argc, char** argv)
     freeSquareMatrix( nextW );
     for (rotation = 0; rotation < 4; rotation++)
         freeSquareMatrix( patterns[rotation] );
+    free(cellsToPrint);
 
     MPI_Finalize();
     return 0;
@@ -435,15 +475,14 @@ int countNeighbours(char** world, int row, int col)
 {
     int i, j, count;
 
-    count = 0;
+    //discount the center
+    count = -(world[row][col] == ALIVE);
+
     for(i = row-1; i <= row+1; i++){
         for(j = col-1; j <= col+1; j++){
             count += (world[i][j] == ALIVE );
         }
     }
-
-    //discount the center
-    count -= (world[row][col] == ALIVE);
 
     return count;
 
@@ -537,9 +576,11 @@ void searchSinglePattern(char** world, int startRow, int numRowsToCheck, int wRo
             match = 1;
 
             for (pRow = 0; match && pRow < pSize; pRow++) {
-                for (pCol = 0; match && pCol < pSize; pCol++) {
-                    if (world[wRow+pRow][wCol+pCol] != pattern[pRow][pCol])
+                for (pCol = 0; pCol < pSize; pCol++) {
+                    if (world[wRow+pRow][wCol+pCol] != pattern[pRow][pCol]) {
                         match = 0;
+                        break;
+                    }
                 }
             }
             if (match)
@@ -610,19 +651,25 @@ void insertEnd(MATCHLIST* list,
 
 }
 
-void printList(MATCHLIST* list)
-{
+
+/***********************************************************
+   Cells related functions
+***********************************************************/
+
+CELL* allocateCellsList( int size) {
+    CELL* contiguous;
+
+    //Using a least compiler version dependent approach here
+    //C99, C11 have a nicer syntax.
+    contiguous = (CELL*) malloc(sizeof(CELL) * size);
+    if (contiguous == NULL)
+        die(__LINE__);
+
+    return contiguous;
+}
+
+void printList(CELL* cells, int numCells, int iter, int rotation) {
     int i;
-    MATCH* cur;
-
-    printf("List size = %d\n", list->nItem);
-
-
-    if (list->nItem == 0) return;
-
-    cur = list->tail->next;
-    for( i = 0; i < list->nItem; i++, cur=cur->next){
-        printf("%d:%d:%d:%d\n",
-                cur->iteration, cur->row, cur->col, cur->rotation);
-    }
+    for (i = 0; i < numCells; i ++)
+        printf("%d:%d:%d:%d\n", iter, cells[i].row, cells[i].col, rotation);
 }
