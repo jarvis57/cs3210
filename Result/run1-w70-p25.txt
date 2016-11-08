@@ -1,0 +1,4 @@
+246c246
+< Parallel SETL took 13.85 seconds
+---
+> Sequential SETL took 84.47 seconds
