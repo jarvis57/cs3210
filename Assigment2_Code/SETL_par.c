@@ -263,7 +263,7 @@ int main( int argc, char** argv)
 
     // Iterator in each rank
     MATCH* cur;
-    cur = list->tail->next;
+    cur = list->nItem ? list->tail->next : NULL;
     int count = 1;
 
     // Cells to print
