@@ -1,3 +1,4 @@
+mkdir ../Gen-Data
 for livePercent in 0 25 50 75 100
 do
 	for size in 5 3000
@@ -9,6 +10,7 @@ done
 make
 make -f SETL.pbs
 
+mkdir ../Result
 for t in 1 2 3
 do
 	for w in 0 25 50 75 100
