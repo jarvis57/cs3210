@@ -155,17 +155,13 @@ int main( int argc, char** argv)
     if (rank == root) {
         curW = readWorldFromFile(argv[1], &size);
         nextW = allocateSquareMatrix(size+2, DEAD);
-        printf("World Size = %d\n", size);
-
         iterations = atoi(argv[2]);
-        printf("Iterations = %d\n", iterations);
 
         patterns[N] = readPatternFromFile(argv[3], &patternSize);
         for (dir = E; dir <= W; dir++){
             patterns[dir] = allocateSquareMatrix(patternSize, DEAD);
             rotate90(patterns[dir-1], patterns[dir], patternSize);
         }
-        printf("Pattern size = %d\n", patternSize);
     }
 
     //Start timer
@@ -265,12 +261,6 @@ int main( int argc, char** argv)
     // Print the results in order
     // -------------------------------------------------------------------------
 
-    // Send the sizes of results from all ranks to the root and print
-    int totalSize, listSize = list->nItem;
-    MPI_Reduce(&listSize, &totalSize, 1, MPI_INT, MPI_SUM, root, MPI_COMM_WORLD);
-    if (rank == root)
-        printf("List size = %d\n", totalSize);
-
     // Iterator in each rank
     MATCH* cur;
     cur = list->tail->next;
@@ -279,7 +269,7 @@ int main( int argc, char** argv)
     // Cells to print
     CELL *cellsToPrint;
     cellsToPrint = allocateCellsList(size * rowsPerTask);
-    int numCells;
+    int numCells, listSize = list->nItem;
 
     // FOR EACH (iteration, rotation)
     for (iter = 0; iter < iterations; iter++) {

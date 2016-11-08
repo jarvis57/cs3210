@@ -5,7 +5,7 @@
 #include <sys/time.h>
 
 /***********************************************************
-  Helper functions 
+  Helper functions
 ***********************************************************/
 
 //For exiting on error condition
@@ -30,7 +30,7 @@ void printSquareMatrix( char**, int size );
    World  related functions
 ***********************************************************/
 
-#define ALIVE 'X' 
+#define ALIVE 'X'
 #define DEAD 'O'
 
 char** readWorldFromFile( char* fname, int* size );
@@ -78,7 +78,7 @@ char** readPatternFromFile( char* fname, int* size );
 
 void rotate90(char** current, char** rotated, int size);
 
-void searchPatterns(char** world, int wSize, int iteration, 
+void searchPatterns(char** world, int wSize, int iteration,
         char** patterns[4], int pSize, MATCHLIST* list);
 
 void searchSinglePattern(char** world, int wSize, int interation,
@@ -97,29 +97,25 @@ int main( int argc, char** argv)
     int size, patternSize;
     long long before, after;
     MATCHLIST*list;
-    
+
     if (argc < 4 ){
-        fprintf(stderr, 
+        fprintf(stderr,
             "Usage: %s <world file> <Iterations> <pattern file>\n", argv[0]);
         exit(1);
-    } 
+    }
 
 
     curW = readWorldFromFile(argv[1], &size);
     nextW = allocateSquareMatrix(size+2, DEAD);
 
 
-    printf("World Size = %d\n", size);
-
     iterations = atoi(argv[2]);
-    printf("Iterations = %d\n", iterations);
 
     patterns[N] = readPatternFromFile(argv[3], &patternSize);
     for (dir = E; dir <= W; dir++){
         patterns[dir] = allocateSquareMatrix(patternSize, DEAD);
         rotate90(patterns[dir-1], patterns[dir], patternSize);
     }
-    printf("Pattern size = %d\n", patternSize);
 
 #ifdef DEBUG
     printSquareMatrix(patterns[N], patternSize);
@@ -128,7 +124,7 @@ int main( int argc, char** argv)
     printSquareMatrix(patterns[W], patternSize);
 #endif
 
- 
+
     //Start timer
     before = wallClockTime();
 
@@ -157,7 +153,7 @@ int main( int argc, char** argv)
     //Stop timer
     after = wallClockTime();
 
-    printf("Sequential SETL took %1.2f seconds\n", 
+    printf("Sequential SETL took %1.2f seconds\n",
         ((float)(after - before))/1000000000);
 
 
@@ -176,7 +172,7 @@ int main( int argc, char** argv)
 }
 
 /***********************************************************
-  Helper functions 
+  Helper functions
 ***********************************************************/
 
 
@@ -211,9 +207,9 @@ char** allocateSquareMatrix( int size, char defaultValue )
     int i;
 
     //Using a least compiler version dependent approach here
-    //C99, C11 have a nicer syntax.    
+    //C99, C11 have a nicer syntax.
     contiguous = (char*) malloc(sizeof(char) * size * size);
-    if (contiguous == NULL) 
+    if (contiguous == NULL)
         die(__LINE__);
 
 
@@ -221,7 +217,7 @@ char** allocateSquareMatrix( int size, char defaultValue )
 
     //Point the row array to the right place
     matrix = (char**) malloc(sizeof(char*) * size );
-    if (matrix == NULL) 
+    if (matrix == NULL)
         die(__LINE__);
 
     matrix[0] = contiguous;
@@ -235,7 +231,7 @@ char** allocateSquareMatrix( int size, char defaultValue )
 void printSquareMatrix( char** matrix, int size )
 {
     int i,j;
-    
+
     for (i = 0; i < size; i++){
         for (j = 0; j < size; j++){
             printf("%c", matrix[i][j]);
@@ -259,7 +255,7 @@ void freeSquareMatrix( char** matrix )
 char** readWorldFromFile( char* fname, int* sizePtr )
 {
     FILE* inf;
-    
+
     char temp, **world;
     int i, j;
     int size;
@@ -271,7 +267,7 @@ char** readWorldFromFile( char* fname, int* sizePtr )
 
     fscanf(inf, "%d", &size);
     fscanf(inf, "%c", &temp);
-    
+
     //Using the "halo" approach
     // allocated additional top + bottom rows
     // and leftmost and rightmost rows to form a boundary
@@ -287,11 +283,11 @@ char** readWorldFromFile( char* fname, int* sizePtr )
 
     *sizePtr = size;    //return size
     return world;
-    
+
 }
 
 int countNeighbours(char** world, int row, int col)
-//Assume 1 <= row, col <= size, no check 
+//Assume 1 <= row, col <= size, no check
 {
     int i, j, count;
 
@@ -326,7 +322,7 @@ void evolveWorld(char** curWorld, char** nextWorld, int size)
 
             } else if (liveNeighbours == 3)
                     nextWorld[i][j] = ALIVE;
-        } 
+        }
     }
 }
 
@@ -337,7 +333,7 @@ void evolveWorld(char** curWorld, char** nextWorld, int size)
 char** readPatternFromFile( char* fname, int* sizePtr )
 {
     FILE* inf;
-    
+
     char temp, **pattern;
     int i, j;
     int size;
@@ -349,7 +345,7 @@ char** readPatternFromFile( char* fname, int* sizePtr )
 
     fscanf(inf, "%d", &size);
     fscanf(inf, "%c", &temp);
-    
+
     pattern = allocateSquareMatrix( size, DEAD );
 
     for (i = 0; i < size; i++){
@@ -358,7 +354,7 @@ char** readPatternFromFile( char* fname, int* sizePtr )
         }
         fscanf(inf, "%c", &temp);
     }
-    
+
     *sizePtr = size;    //return size
     return pattern;
 }
@@ -375,13 +371,13 @@ void rotate90(char** current, char** rotated, int size)
     }
 }
 
-void searchPatterns(char** world, int wSize, int iteration, 
+void searchPatterns(char** world, int wSize, int iteration,
         char** patterns[4], int pSize, MATCHLIST* list)
 {
     int dir;
 
     for (dir = N; dir <= W; dir++){
-        searchSinglePattern(world, wSize, iteration, 
+        searchSinglePattern(world, wSize, iteration,
                 patterns[dir], pSize, dir, list);
     }
 
@@ -406,7 +402,7 @@ void searchSinglePattern(char** world, int wSize, int iteration,
                         printf("\tF:(%d, %d) %c != %c\n", pRow, pCol,
                             world[wRow+pRow][wCol+pCol], pattern[pRow][pCol]);
 #endif
-                        match = 0;    
+                        match = 0;
                     }
                 }
             }
@@ -448,14 +444,14 @@ void deleteList( MATCHLIST* list)
         cur = list->tail->next;
         next = cur->next;
         for( i = 0; i < list->nItem; i++, cur = next, next = next->next ) {
-            free(cur); 
+            free(cur);
         }
 
     }
     free( list );
 }
 
-void insertEnd(MATCHLIST* list, 
+void insertEnd(MATCHLIST* list,
         int iteration, int row, int col, int rotation)
 {
     MATCH* newItem;
@@ -487,15 +483,12 @@ void printList(MATCHLIST* list)
     int i;
     MATCH* cur;
 
-    printf("List size = %d\n", list->nItem);    
-
 
     if (list->nItem == 0) return;
 
     cur = list->tail->next;
     for( i = 0; i < list->nItem; i++, cur=cur->next){
-        printf("%d:%d:%d:%d\n", 
+        printf("%d:%d:%d:%d\n",
                 cur->iteration, cur->row, cur->col, cur->rotation);
     }
 }
-
