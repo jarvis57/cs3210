@@ -23,7 +23,7 @@ int main(int argc, char** argv)
     outf = fopen(argv[3], "w");
     fprintf(outf, "%d\n", N);
 
-        
+
     srand48(time(NULL));
     for (i = 0; i < N; i++) {
         for (j = 0; j < N; j++){
@@ -35,9 +35,9 @@ int main(int argc, char** argv)
         }
         fprintf(outf, "\n");
     }
-    
+
     fclose(outf);
-    
+
 
     return 0;
 }

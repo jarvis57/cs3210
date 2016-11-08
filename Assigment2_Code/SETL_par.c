@@ -5,6 +5,7 @@
 #include <sys/time.h>
 #include <math.h>
 #include <mpi.h>
+#include <stddef.h>
 
 /***********************************************************
   Helper functions
@@ -244,17 +245,20 @@ int main( int argc, char** argv)
         curW = nextW;
         nextW = temp;
 
-        // Send additional rows to neighbors (rows that neighbors cannot calculate by themselves)
-        if (rank != numtasks-1)
-            MPI_Isend(&curW[numRows][1], size, MPI_CHAR, rank+1, iter, MPI_COMM_WORLD, &req);
-        if (rank != 0)
-            MPI_Isend(&curW[patternSize-1][1], size, MPI_CHAR, rank-1, iterations+iter, MPI_COMM_WORLD, &req);
+        // Only send/receive data if this is not the last iteration.
+        if (iter < iterations-1) {
+            // Send additional rows to neighbors (rows that neighbors cannot calculate by themselves)
+            if (rank != numtasks-1)
+                MPI_Isend(&curW[numRows][1], size, MPI_CHAR, rank+1, iter, MPI_COMM_WORLD, &req);
+            if (rank != 0)
+                MPI_Isend(&curW[patternSize-1][1], size, MPI_CHAR, rank-1, iterations+iter, MPI_COMM_WORLD, &req);
 
-        // Blocking receive rows from the neighbors, that I cannot calculate by myself
-        if (rank != 0)
-            MPI_Recv(&curW[0][1], size, MPI_CHAR, rank-1, iter, MPI_COMM_WORLD, &stat);
-        if (rank != numtasks-1)
-            MPI_Recv(&curW[totalRows-1][1], size, MPI_CHAR, rank+1, iterations+iter, MPI_COMM_WORLD, &stat);
+            // Blocking receive rows from the neighbors, that I cannot calculate by myself
+            if (rank != 0)
+                MPI_Recv(&curW[0][1], size, MPI_CHAR, rank-1, iter, MPI_COMM_WORLD, &stat);
+            if (rank != numtasks-1)
+                MPI_Recv(&curW[totalRows-1][1], size, MPI_CHAR, rank+1, iterations+iter, MPI_COMM_WORLD, &stat);
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -648,7 +652,6 @@ void insertEnd(MATCHLIST* list,
     }
 
     (list->nItem)++;
-
 }
 
 
