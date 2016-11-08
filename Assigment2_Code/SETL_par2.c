@@ -33,7 +33,7 @@ typedef struct CELLS {
 
 CELL* allocateCellsList( int size );
 
-void printList(CELL* list, int nItem, int iter, int rotation);
+void printList(CELL* cells, int numCells, int iter, int rotation);
 
 
 /***********************************************************
@@ -64,6 +64,27 @@ void evolveWorld(char** curWorld, char** nextWorld, int wRows, int wCols);
 
 
 /***********************************************************
+   Simple circular linked list for match records
+***********************************************************/
+
+typedef struct MSTRUCT {
+    int iteration, row, col, rotation;
+    struct MSTRUCT *next;
+} MATCH;
+
+
+typedef struct {
+    int nItem;
+    MATCH* tail;
+} MATCHLIST;
+
+MATCHLIST* newList();
+
+void deleteList( MATCHLIST*);
+
+void insertEnd(MATCHLIST*, int, int, int, int);
+
+/***********************************************************
    Search related functions
 ***********************************************************/
 
@@ -78,10 +99,10 @@ char** readPatternFromFile( char* fname, int* size );
 void rotate90(char** current, char** rotated, int size);
 
 void searchPatterns(char** world, int startRow, int numRowsToCheck, int wRows, int wCols,
-        int iteration, char** patterns[4], int pSize, CELL** list, int* nItem);
+        int iteration, char** patterns[4], int pSize, MATCHLIST* list);
 
 void searchSinglePattern(char** world, int startRow, int numRowsToCheck, int wRows, int wCols,
-        int interation, char** pattern, int pSize, int rotation, CELL** list, int* nItem);
+        int interation, char** pattern, int pSize, int rotation, MATCHLIST* list);
 
 /***********************************************************
    Main function
@@ -204,23 +225,15 @@ int main( int argc, char** argv)
     }
 
     // -------------------------------------------------------------------------
-    // Actual work start, searching for patterns and print in order
+    // Actual work start, searching for patterns
     // -------------------------------------------------------------------------
+    // List for results
+    MATCHLIST *list;
+    list= newList();
 
-    // list for results of 4 directions
-    CELL *list[4];
-    int nItem[4];
-    for (rotation = N; rotation <= W; rotation++)
-        list[rotation] = allocateCellsList(size * rowsPerTask);
-
-    // For each iteration
     for (iter = 0; iter < iterations; iter++) {
-        // Reset list count for new iteration
-        for (rotation = N; rotation <= W; rotation++)
-            nItem[rotation] = 0;
-
         // Search for Patterns
-        searchPatterns( curW, startRow, numRows, totalRows, size, iter, patterns, patternSize, list, nItem);
+        searchPatterns( curW, startRow, numRows, totalRows, size, iter, patterns, patternSize, list);
 
         // Generate next generation
         evolveWorld( curW, nextW, totalRows, size );
@@ -242,21 +255,46 @@ int main( int argc, char** argv)
             if (rank != numtasks-1)
                 MPI_Recv(&curW[totalRows-1][1], size, MPI_CHAR, rank+1, iterations+iter, MPI_COMM_WORLD, &stat);
         }
+    }
 
-        // Print data for this iteration, order by rotation
+    // -------------------------------------------------------------------------
+    // Print the results in order
+    // -------------------------------------------------------------------------
+
+    // Iterator in each rank
+    MATCH* cur;
+    cur = list->nItem ? list->tail->next : NULL;
+    int count = 1;
+
+    // Cells to print
+    CELL *cellsToPrint;
+    cellsToPrint = allocateCellsList(size * rowsPerTask);
+    int numCells, listSize = list->nItem;
+
+    // FOR EACH (iteration, rotation)
+    for (iter = 0; iter < iterations; iter++) {
         for (rotation = 0; rotation < 4; rotation++) {
+            // Get list of results corresponding to (iteration, rotation)
+            numCells = 0;
+            while (count <= listSize && cur->iteration == iter && cur->rotation == rotation) {
+                cellsToPrint[numCells].row = cur->row;
+                cellsToPrint[numCells].col = cur->col;
+                numCells ++; count ++;
+                cur = cur->next;
+            }
+
             if (rank == root) {
                 // Only printing at root
-                printList(list[rotation], nItem[rotation], iter, rotation);
+                printList(cellsToPrint, numCells, iter, rotation);
                 for (task = 1; task < numtasks; task ++) {
-                    MPI_Probe(task, tag+rotation, MPI_COMM_WORLD, &stat);
-                    MPI_Get_count(&stat, MPI_CELL_TYPE, &nItem[rotation]);
-                    MPI_Recv(&list[rotation][0], nItem[rotation], MPI_CELL_TYPE, task, tag+rotation, MPI_COMM_WORLD, &stat);
-                    printList(list[rotation], nItem[rotation], iter, rotation);
+                    MPI_Probe(task, tag, MPI_COMM_WORLD, &stat);
+                    MPI_Get_count(&stat, MPI_CELL_TYPE, &numCells);
+                    MPI_Recv(&cellsToPrint[0], numCells, MPI_CELL_TYPE, task, tag, MPI_COMM_WORLD, &stat);
+                    printList(cellsToPrint, numCells, iter, rotation);
                 }
             } else {
                 // Non-root tasks: send printing data to root
-                MPI_Isend(&list[rotation][0], nItem[rotation], MPI_CELL_TYPE, root, tag+rotation, MPI_COMM_WORLD, &req);
+                MPI_Send(&cellsToPrint[0], numCells, MPI_CELL_TYPE, root, tag, MPI_COMM_WORLD);
             }
         }
     }
@@ -268,12 +306,12 @@ int main( int argc, char** argv)
     }
 
     //Clean up
+    deleteList( list );
     freeSquareMatrix( curW );
     freeSquareMatrix( nextW );
-    for (rotation = N; rotation <= W; rotation++) {
+    for (rotation = 0; rotation < 4; rotation++)
         freeSquareMatrix( patterns[rotation] );
-        free(list[rotation]);
-    }
+    free(cellsToPrint);
 
     MPI_Finalize();
     return 0;
@@ -511,19 +549,19 @@ void rotate90(char** current, char** rotated, int size)
 }
 
 void searchPatterns(char** world, int startRow, int numRowsToCheck, int wRows, int wCols,
-        int iteration, char** patterns[4], int pSize, CELL** list, int* nItem)
+        int iteration, char** patterns[4], int pSize, MATCHLIST* list)
 {
     int dir;
 
     for (dir = N; dir <= W; dir++){
         searchSinglePattern(world, startRow, numRowsToCheck, wRows, wCols, iteration,
-                patterns[dir], pSize, dir, list, nItem);
+                patterns[dir], pSize, dir, list);
     }
 
 }
 
 void searchSinglePattern(char** world, int startRow, int numRowsToCheck, int wRows, int wCols,
-        int iteration, char** pattern, int pSize, int rotation, CELL** list, int* nItem)
+        int iteration, char** pattern, int pSize, int rotation, MATCHLIST* list)
 {
     int wRow, wCol, pRow, pCol, match;
 
@@ -539,13 +577,71 @@ void searchSinglePattern(char** world, int startRow, int numRowsToCheck, int wRo
                     }
                 }
             }
-            if (match) {
-                list[rotation][nItem[rotation]].row = startRow+wRow-2;
-                list[rotation][nItem[rotation]].col = wCol-1;
-                nItem[rotation]++;
-            }
+            if (match)
+                insertEnd(list, iteration, startRow+wRow-2, wCol-1, rotation);
         }
     }
+}
+
+/***********************************************************
+   Simple circular linked list for match records
+***********************************************************/
+
+MATCHLIST* newList()
+{
+    MATCHLIST* list;
+
+    list = (MATCHLIST*) malloc(sizeof(MATCHLIST));
+    if (list == NULL)
+        die(__LINE__);
+
+    list->nItem = 0;
+    list->tail = NULL;
+
+    return list;
+}
+
+void deleteList( MATCHLIST* list)
+{
+    MATCH *cur, *next;
+    int i;
+    //delete items first
+
+    if (list->nItem != 0 ){
+        cur = list->tail->next;
+        next = cur->next;
+        for( i = 0; i < list->nItem; i++, cur = next, next = next->next ) {
+            free(cur);
+        }
+
+    }
+    free( list );
+}
+
+void insertEnd(MATCHLIST* list,
+        int iteration, int row, int col, int rotation)
+{
+    MATCH* newItem;
+
+    newItem = (MATCH*) malloc(sizeof(MATCH));
+    if (newItem == NULL)
+        die(__LINE__);
+
+    newItem->iteration = iteration;
+    newItem->row = row;
+    newItem->col = col;
+    newItem->rotation = rotation;
+
+    if (list->nItem == 0){
+        newItem->next = newItem;
+        list->tail = newItem;
+    } else {
+        newItem->next = list->tail->next;
+        list->tail->next = newItem;
+        list->tail = newItem;
+    }
+
+    (list->nItem)++;
 }
 
 
@@ -553,7 +649,7 @@ void searchSinglePattern(char** world, int startRow, int numRowsToCheck, int wRo
    Cells related functions
 ***********************************************************/
 
-CELL* allocateCellsList(int size) {
+CELL* allocateCellsList( int size) {
     CELL* contiguous;
 
     //Using a least compiler version dependent approach here
@@ -565,8 +661,8 @@ CELL* allocateCellsList(int size) {
     return contiguous;
 }
 
-void printList(CELL* list, int nItem, int iter, int rotation) {
+void printList(CELL* cells, int numCells, int iter, int rotation) {
     int i;
-    for (i = 0; i < nItem; i++)
-        printf("%d:%d:%d:%d\n", iter, list[i].row, list[i].col, rotation);
+    for (i = 0; i < numCells; i ++)
+        printf("%d:%d:%d:%d\n", iter, cells[i].row, cells[i].col, rotation);
 }
